@@ -1,0 +1,44 @@
+[tool.poetry]
+name = "dockerxxx"
+version = "0.1.0"
+description = ""
+authors = ["byt3bl33d3r <byt3bl33d3r@pm.me>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+typer = "^0.9.0"
+httpx = "^0.25.2"
+pydantic = "^2.5.2"
+asyncssh = "^2.14.2"
+pydantic-settings = "^2.1.0"
+structlog = "^23.2.0"
+
+[tool.poetry.scripts]
+dockerxxx = "dockerxxx.console:main"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.3.1"
+coverage = {extras = ["toml"], version = "^7.2.5"}
+pytest-cov = "^4.0.0"
+pytest-mock = "^3.10.0"
+pytest-asyncio = "^0.21.0"
+mypy = "^1.2.0"
+ruff = "^0.1.8"
+ptpython = "^3.0.23"
+datamodel-code-generator = "^0.25.1"
+rich = "^13.7.0"
+
+[tool.coverage.paths]
+source = ["src", "*/site-packages"]
+
+[tool.coverage.run]
+branch = true
+source = ["dockerxxx"]
+
+[tool.coverage.report]
+show_missing = true
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
