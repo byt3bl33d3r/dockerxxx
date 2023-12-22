@@ -1,3 +1,4 @@
+import asyncio
 from .transports import (
     BaseTransport,
     UnixSocketTransport,
@@ -9,27 +10,28 @@ from .transports import (
 )
 from .api import Images, Containers
 from .models import SystemInfo, SystemVersion
-from pydantic import BaseModel, AnyUrl, field_validator, ValidationError, Field, ConfigDict
+from typing import Optional
+from pydantic import BaseModel, AnyUrl, field_validator, Field, ConfigDict
 from pydantic.types import Path
-from pydantic_core.core_schema import FieldValidationInfo
+from pydantic_core.core_schema import ValidationInfo
 from pydantic_settings import BaseSettings
 
 
 class EnvSettings(BaseSettings):
-    docker_host: AnyUrl = "unix://var/run/docker.sock"
+    docker_host: AnyUrl = "unix:///var/run/docker.sock"
     docker_tls_verify: bool = True
-    docker_cert_path: Path | None = None
+    docker_cert_path: Optional[Path] = None
 
 
 class BaseDockerClient(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    base_url : AnyUrl = "unix://var/run/docker.sock"
+    base_url : AnyUrl = "unix:///var/run/docker.sock"
     version: str = "auto"
     timeout: int = 5
     tls: bool = True
-    user_agent: str | None
-    transport: BaseTransport | None = Field(None, validate_default=True)
+    user_agent: Optional[str] = None
+    transport: Optional[BaseTransport] = Field(None, validate_default=True)
 
     @classmethod
     def from_env(cls, version: str = "auto", timeout: int = 5, user_agent: str = None):
@@ -56,9 +58,13 @@ class AsyncDockerClient(BaseDockerClient):
     '''
 
     @field_validator('transport')
-    def set_transport(cls, v, info: FieldValidationInfo) -> AsyncUnixSocketTransport | AsyncSshTransport | AsyncHttpTransport:
+    def set_transport(cls, v, info: ValidationInfo) -> AsyncUnixSocketTransport | AsyncSshTransport | AsyncHttpTransport:
         if info.data['base_url'].scheme == 'unix':
             return AsyncUnixSocketTransport(url=info.data['base_url'])
+        elif info.data['base_url'].scheme == 'ssh':
+            ssh_transport = AsyncSshTransport(url=info.data['base_url'])
+            asyncio.create_task(ssh_transport.forward_socket())
+            return AsyncUnixSocketTransport(url=ssh_transport.uds_url)
 
         raise NotImplementedError
 
@@ -84,12 +90,8 @@ class AsyncDockerClient(BaseDockerClient):
 
 class DockerClient(BaseDockerClient):
     @field_validator('transport')
-    def set_transport(cls, v, info: FieldValidationInfo) -> UnixSocketTransport | HttpTransport | SshTransport:
+    def set_transport(cls, v, info: ValidationInfo) -> UnixSocketTransport | HttpTransport | SshTransport:
         if info.data['base_url'].scheme == 'unix':
             return UnixSocketTransport(url=info.data['base_url'])
 
         raise NotImplementedError
-
-    def info(self):
-        r = self.transport.client.get("/info")
-        return SystemInfo.model_validate(r.json())

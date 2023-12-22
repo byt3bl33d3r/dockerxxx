@@ -6,8 +6,8 @@ from .client import AsyncDockerClient
 
 async def amain():
     docker = AsyncDockerClient.from_env()
-    #pprint(await docker.daemon_version())
-    #pprint(await docker.info())
+    pprint(await docker.daemon_version())
+    pprint(await docker.info())
     #pprint(await docker.images.list())
     #pprint(await docker.containers.get("0201f1f3626e"))
     #c = await docker.containers.list()

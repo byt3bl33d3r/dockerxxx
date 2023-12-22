@@ -8,7 +8,7 @@ from ..models import ContainerSummary, ContainerConfig, ContainerCreateResponse,
 from ..transports import BaseTransport
 from ..errors import ContainerError
 from ..utils import split_command
-from pydantic import field_validator, validator
+from pydantic import field_validator
 from pydantic import BaseModel, Field, ConfigDict
 
 class ContainerLogParams(BaseModel):
@@ -27,7 +27,7 @@ class ContainerListParams(BaseModel):
     since: Optional[str] = None
     before: Optional[str] = None
 
-    @validator('filters')
+    @field_validator('filters')
     def convert_filters(cls, f):
         if isinstance(f, dict):
             result = {}
@@ -239,7 +239,7 @@ class Containers(BaseModel):
         return await self.get(container.id)
 
     async def get(self, container_id: str) -> Container:
-        r = await self.transport.client.get(f"/containers/{container_id}/json")
+        #r = await self.transport.client.get(f"/containers/{container_id}/json")
         #print(Container.model_fields)
         return ( await self.list(all=True, filters={"id": container_id}) )[0]
 

@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, conint, validator, ConfigDict
+from pydantic import BaseModel, Field, conint, field_validator, ConfigDict
 
 
 class Type(Enum):
@@ -4921,7 +4921,7 @@ class SystemInfo(BaseModel):
         ],
     )
 
-    @validator("isolation", pre=True)
+    @field_validator("isolation", mode='before')
     def empty_str_none(cls, v):
         if v == '':
             return None

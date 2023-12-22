@@ -1,5 +1,5 @@
 from typing import List
-from pydantic import BaseModel, validator
+from pydantic import BaseModel
 from .generics import Response
 from ..transports import BaseTransport
 from ..models import ImageSummary

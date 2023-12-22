@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 import struct
 from ..utils import split_command
 from ..transports import BaseTransport
@@ -24,7 +24,7 @@ class ExecCreateConfig(BaseModel):
     WorkingDir: Optional[str] = Field(None, alias='workdir')
     detachKeys: str = Field(None)
 
-    @validator('Cmd')
+    @field_validator('Cmd')
     def string_cmd_to_list(cls, v):
         if isinstance(v, str):
             return split_command(v)
