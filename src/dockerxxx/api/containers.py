@@ -1,15 +1,19 @@
-import json
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from .images import Image
 from .exec import Exec, ExecCreateConfig, ExecStartConfig, ExecResults
 from .generics import Response
-from ..models import ContainerSummary, ContainerConfig, ContainerCreateResponse, ContainerWaitResponse
+from ..models import (
+    ContainerSummary, ContainerConfig, 
+    ContainerCreateResponse, ContainerWaitResponse, 
+    ContainerState, GraphDriverData, HostConfig,
+    NetworkSettings, MountPoint
+)
 from ..transports import BaseTransport
 from ..errors import ContainerError
-from ..utils import split_command
+from ..utils import split_command, convert_filters, get_raw_response_socket, get_results
 from pydantic import field_validator
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field
 
 class ContainerLogParams(BaseModel):
     stderr: bool
@@ -29,21 +33,46 @@ class ContainerListParams(BaseModel):
 
     @field_validator('filters')
     def convert_filters(cls, f):
-        if isinstance(f, dict):
-            result = {}
-            for k, v in iter(f.items()):
-                if isinstance(v, bool):
-                    v = 'true' if v else 'false'
-                if not isinstance(v, list):
-                    v = [v, ]
-                result[k] = [
-                    str(item) if not isinstance(item, str) else item
-                    for item in v
-                ]
+        return convert_filters(f)
 
-            return json.dumps(result)
+class ContainerAttachParams(BaseModel):
+    stdin: int = 0
+    stdout: int = 1
+    stderr: int = 1
+    stream: int = 0
+    logs: int = 0
 
-class Container(ContainerSummary):
+class ContainerInspectResponse(BaseModel):
+    id: str = Field(alias='Id', description='The ID of this container')
+    created: str = Field(alias='Created', description='When the container was created')
+    path: str = Field(alias='Path')
+    args: List[str] = Field(alias='Args')
+    state: Optional[ContainerState] = Field(None, alias='State', description='Containers running state')
+    image: str = Field(
+        alias='Image',
+        description='The ID of the image that this container was created from',
+    )
+    resolve_conf_path: str = Field(alias='ResolvConfPath')
+    hostname_path: str = Field(alias='HostnamePath')
+    hosts_path: str = Field(alias='HostsPath')
+    log_path: str = Field(alias='LogPath')
+    name: str = Field(alias='Name')
+    restart_count: int = Field(alias='RestartCount')
+    driver: str = Field(alias='Driver')
+    platform: str = Field(alias='Platform')
+    mount_label: str = Field(alias='MountLabel')
+    process_label: str = Field(alias='ProcessLabel')
+    app_armor_profile: str = Field(alias='AppArmorProfile')
+    exec_ids: Optional[List[str]] = Field(None, alias='ExecIDs')
+    host_config: Optional[HostConfig] = Field(None, alias='HostConfig')
+    graph_driver: Optional[GraphDriverData] = Field(None, alias='GraphDriver')
+    size_rw: Optional[int] = Field(None, alias='SizeRW')
+    size_root_fs: Optional[int] = Field(None, alias='SizeRootFs')
+    mounts: Optional[List[MountPoint]] = Field(None, alias='Mounts')
+    config: Optional[ContainerConfig] = Field(None, alias='Config')
+    network_settings: Optional[NetworkSettings] = Field(None, alias='NetworkSettings')
+
+class Container(ContainerInspectResponse):
     transport: Optional[BaseTransport] = Field(None)
     #model_config = ConfigDict(extra='allow')
 
@@ -51,22 +80,40 @@ class Container(ContainerSummary):
     def shorten_id(cls, v):
         return v[:12]
 
-    @field_validator('names')
-    def shorten_names(cls, v):
-        return [ name.strip('/') for name in v ]
+    #@field_validator('names')
+    #def shorten_names(cls, v):
+    #    return [ name.strip('/') for name in v ]
 
-    @field_validator('image_id')
+    @field_validator('image')
     def shorten_image_id(cls, v):
         return v.split(':')[1][:12]
 
-    async def attach(self, **kwargs):
+    async def attach_socket(self, stdin: bool = False, stdout: bool = True, 
+                            stderr: bool = True, stream: bool = True):
+
+        req = self.transport.client.build_request(
+            "POST",
+            f"/containers/{self.id}/attach",
+            params=ContainerAttachParams(stdin=stdin, stdout=stdout, stderr=stderr, stream=stream).model_dump(),
+            headers={
+                'Connection': 'Upgrade',
+                'Upgrade': 'tcp'
+            }
+        )
+
+        r = await self.transport.client.send(req, stream=True)
+        return r, get_raw_response_socket(self.transport.client)
+
+    async def attach(self, stdout: bool = True, stderr: bool = True,
+               stream: bool = False, logs: bool = False, demux: bool = False):
         raise NotImplementedError
 
-    async def attach_socket(self):
-        raise NotImplementedError
-    
     async def commit(self):
         raise NotImplementedError
+
+    async def inspect(self):
+        r = await self.transport.client.get(f"/containers/{self.id}/json")
+        return ContainerInspectResponse.model_validate(r.json())
 
     async def diff(self):
         raise NotImplementedError
@@ -110,14 +157,20 @@ class Container(ContainerSummary):
     async def start(self):
         await self.transport.client.post(f"/containers/{self.id}/start")
 
-    async def remove(self, v=False, link=False, force=False):
+    async def stop(self):
+        await self.transport.client.post(f"/containers/{self.id}/stop")
+
+    async def remove(self, v: bool = False, link: bool = False, force: bool = False):
         await self.transport.client.delete(
             f"/containers/{self.id}",
             params={'force': force, 'link': link, 'v': v}
         )
 
-    async def kill(self):
-        raise NotImplementedError
+    async def kill(self, signal: str | int = 'SIGKILL'):
+        await self.transport.client.post(
+            f"/containers/{self.id}/kill",
+            params={'signal': signal}
+        )
 
     async def _logs_stream(self, container_log_params: ContainerLogParams):
         async with self.transport.client.stream(
@@ -125,6 +178,7 @@ class Container(ContainerSummary):
             f"/containers/{self.id}/logs",
             params=container_log_params.model_dump()
         ) as r:
+            # if self.config.tty:
             async for chunk in r.aiter_bytes():
                 yield chunk
 
@@ -138,13 +192,15 @@ class Container(ContainerSummary):
             tail=tail, since=since, until=until
         )
 
-        if not stream:
-            return (await self.transport.client.get(
-                f"/containers/{self.id}/logs",
-                params=log_params.model_dump()
-            )).content
-        else:
+        if stream:
             return self._logs_stream(log_params)
+
+        r = await self.transport.client.get(
+            f"/containers/{self.id}/logs",
+            params=log_params.model_dump()
+        )
+
+        return await get_results(r.content, self.config.tty)
 
     async def top(self, ps_args: str = None):
         r = await self.transport.client.get(
@@ -224,8 +280,30 @@ class Containers(BaseModel):
             if remove: await container.remove()
 
     async def create(self, image: str | Image, command: str = None, **kwargs) -> Container:
+        # https://github.com/docker/docker-py/blob/6ceb08273c157cbab7b5c77bd71e7389f1a6acc5/docker/types/containers.py#L680
+
         if isinstance(image, Image):
             image = image.id
+
+        labels = kwargs.get('labels')
+        #ports = kwargs.get('ports')
+        entrypoint = kwargs.get('entrypoint')
+        detach = kwargs.get('detach')
+        open_stdin = kwargs.get('open_stdin') or kwargs.get('stdin_open')
+
+        if detach:
+            kwargs['attach_stdout'] = False
+            kwargs['attach_stderr'] = False
+
+        if not detach and open_stdin:
+            kwargs['attach_stdin'] = True
+            kwargs['stdin_once'] = True
+
+        if isinstance(labels, list):
+            labels = {lbl: '' for lbl in labels}
+
+        if isinstance(entrypoint, str):
+            kwargs['entrypoint'] = split_command(entrypoint)
 
         kwargs['image'] = image
         kwargs['cmd'] = split_command(command)
@@ -236,12 +314,13 @@ class Containers(BaseModel):
         )
 
         container = ContainerCreateResponse.model_validate(r.json())
-        return await self.get(container.id)
+        return await self.get(container.id[:12])
 
     async def get(self, container_id: str) -> Container:
-        #r = await self.transport.client.get(f"/containers/{container_id}/json")
-        #print(Container.model_fields)
-        return ( await self.list(all=True, filters={"id": container_id}) )[0]
+        r = await self.transport.client.get(f"/containers/{container_id}/json")
+        container = Container.model_validate(r.json())
+        container.transport =  self.transport
+        return container
 
     async def list(self, all: bool = False, before: str = None,
                    filters: Dict[Any, Any] = None, limit: int = -1, since: str = None,
@@ -252,8 +331,7 @@ class Containers(BaseModel):
             params=ContainerListParams(all=all, before=before, filters=filters, limit=limit, since=since).model_dump()
         )
 
-        containers = Response[Container](data=r.json()).data
-        list(map(lambda c: setattr(c, 'transport', self.transport), containers))
+        containers = Response[ContainerSummary](data=r.json()).data
         return containers
 
     async def prune(self):

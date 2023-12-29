@@ -4372,6 +4372,12 @@ class HostConfig(Resources):
         description='The list of paths to be set as read-only inside the container\n(this overrides the default set of paths).\n',
     )
 
+    @field_validator("isolation", mode='before')
+    def empty_str_none(cls, v):
+        if v == '':
+            return None
+        return v
+
 
 class NetworkingConfig(BaseModel):
     """

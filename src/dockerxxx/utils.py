@@ -1,13 +1,29 @@
 import shlex
 import struct
 import httpx
-from ptpython import embed
+import json
+import warnings
+
+try:
+    from ptpython import embed
+except ImportError:
+    warnings.warn("ptpython was not found, debug shell won't work")
 
 STDOUT = 1
 STDERR = 2
+STREAM_HEADER_SIZE_BYTES = 8
 
 async def debug_shell():
     await embed(locals=locals(), globals=globals(), return_asyncio_coroutine=True, patch_stdout=True)
+
+def parse_repository_tag(repo_name):
+    parts = repo_name.rsplit('@', 1)
+    if len(parts) == 2:
+        return tuple(parts)
+    parts = repo_name.rsplit(':', 1)
+    if len(parts) == 2 and '/' not in parts[1]:
+        return tuple(parts)
+    return repo_name, None
 
 def split_command(command):
     return shlex.split(command)
@@ -17,6 +33,21 @@ def get_raw_response_socket(client):
         return client._transport._pool.connections[0]._connection._network_stream
 
     raise NotImplementedError
+
+def convert_filters(f):
+    if isinstance(f, dict):
+        result = {}
+        for k, v in iter(f.items()):
+            if isinstance(v, bool):
+                v = 'true' if v else 'false'
+            if not isinstance(v, list):
+                v = [v, ]
+            result[k] = [
+                str(item) if not isinstance(item, str) else item
+                for item in v
+            ]
+
+        return json.dumps(result)
 
 '''
 https://github.com/docker/docker-py/blob/6ceb08273c157cbab7b5c77bd71e7389f1a6acc5/docker/utils/socket.py#L92
@@ -30,7 +61,7 @@ async def next_frame_header(socket):
     https://docs.docker.com/engine/api/v1.24/#attach-to-a-container
     """
 
-    data = await socket.read(8)
+    data = await socket.read(STREAM_HEADER_SIZE_BYTES)
     if not data:
         return (-1, -1)
 
@@ -65,7 +96,7 @@ async def frames_iter_tty(socket):
     """
     while True:
         result = await socket.read()
-        if len(result) == 0:
+        if not result:
             # We have reached EOF
             return
         yield result
@@ -82,3 +113,27 @@ async def frames_iter(socket, tty):
         return ((STDOUT, frame) async for frame in frames_iter_tty(socket))
     else:
         return frames_iter_no_tty(socket)
+
+async def multiplexed_buffer_helper(buf):
+    """A generator of multiplexed data blocks read from a buffered
+    response."""
+
+    buf_length = len(buf)
+    walker = 0
+    while True:
+        if buf_length - walker < STREAM_HEADER_SIZE_BYTES:
+            break
+        header = buf[walker:walker + STREAM_HEADER_SIZE_BYTES]
+        _, length = struct.unpack_from('>BxxxL', header)
+        start = walker + STREAM_HEADER_SIZE_BYTES
+        end = start + length
+        walker = end
+        yield buf[start:end]
+
+async def get_results(res, is_tty):
+    if is_tty:
+        return res
+
+    return b''.join([
+        data async for data in multiplexed_buffer_helper(res)
+    ])

@@ -6,8 +6,29 @@ from .client import AsyncDockerClient
 
 async def amain():
     docker = AsyncDockerClient.from_env()
-    pprint(await docker.daemon_version())
-    pprint(await docker.info())
+    #pprint(await docker.daemon_version())
+    #pprint(await docker.info())
+    await docker.ping()
+    try:
+        container = await docker.containers.create('alpine', 'cat', open_stdin=True)
+
+        stream, net_stream = await container.attach_socket(stdin=True)
+        await container.start()
+
+        await net_stream.write(b'sent data')
+        await net_stream.aclose()
+        await stream.aclose()
+
+        status = await container.wait()
+        stdout = await container.logs(stderr=False)
+        stderr = await container.logs(stdout=False)
+
+        print(f"status code: {status.status_code}")
+        print(f"stdout: {stdout}")
+        print(f"stderr: {stderr}")
+    finally:
+        await container.remove()
+
     #pprint(await docker.images.list())
     #pprint(await docker.containers.get("0201f1f3626e"))
     #c = await docker.containers.list()
@@ -16,7 +37,7 @@ async def amain():
     #pprint(await c[0].top())
     #pprint(await c[0].exec_run('id'))
     #pprint(await c[0].logs())
-    pprint(await docker.containers.run('alpine', 'echo hello world', remove=True))
+    #pprint(await docker.containers.run('alpine', '', remove=True))
 
 
 def main():

@@ -47,7 +47,7 @@ class AsyncSshTransport(BaseTransport):
         options = asyncssh.SSHClientConnectionOptions(
             username=self.url.username,
             password=self.url.password,
-            known_hosts=None,
+            known_hosts=None, # we should be able to turn this on
             client_keys=[]
         )
         log.debug("setting up ssh uds forwarding", local_path=self.uds_url.path, remote_path=remote_uds_path, url=str(self.url))
