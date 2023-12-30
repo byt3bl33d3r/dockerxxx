@@ -73,20 +73,23 @@ class AsyncDockerClient(BaseDockerClient):
         if info.data['base_url'].scheme == 'unix':
             return AsyncUnixSocketTransport(url=info.data['base_url'])
 
+        elif info.data['base_url'].scheme in ['http', 'https']:
+            return AsyncHttpTransport(
+                url=info.data['base_url'],
+                tls_verify=info.data['tls']
+            )
+
         elif info.data['base_url'].scheme in ['ssh', 'unix+ssh', 'ssh+unix']:
             ssh_transport = AsyncSshTransport(url=info.data['base_url'])
             asyncio.create_task(ssh_transport.forward_socket())
             return AsyncUnixSocketTransport(url=ssh_transport.uds_url)
 
-        elif info.data['base_url'].scheme in ['ssh+http', 'http+ssh']:
-            raise NotImplementedError
-
-        elif info.data['base_url'].scheme in ['http']:
+        elif info.data['base_url'].scheme in ['ssh+http', 'http+ssh', 'https+ssh', 'ssh+https']:
             raise NotImplementedError
 
         raise DockerException(
             f"Protocol {info.data['base_url'].scheme} is not supported, "
-            "supported protocols are: unix://, ssh://, http://, ssh+http://"
+            "supported protocols are: unix://, ssh://, http://, https://, ssh+http://, ssh+https://"
         )
 
     async def login(self):

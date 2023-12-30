@@ -11,7 +11,7 @@ from ..models import (
 )
 from ..transports import BaseTransport
 from ..errors import ContainerError
-from ..utils import split_command, convert_filters, get_raw_response_socket, get_results
+from ..utils import split_command, convert_filters, get_raw_response_socket, get_results, frames_iter
 from pydantic import field_validator
 from pydantic import BaseModel, Field
 
@@ -89,12 +89,14 @@ class Container(ContainerInspectResponse):
         return v.split(':')[1][:12]
 
     async def attach_socket(self, stdin: bool = False, stdout: bool = True, 
-                            stderr: bool = True, stream: bool = True):
+                            stderr: bool = True, stream: bool = True, logs: bool = False):
 
         req = self.transport.client.build_request(
             "POST",
             f"/containers/{self.id}/attach",
-            params=ContainerAttachParams(stdin=stdin, stdout=stdout, stderr=stderr, stream=stream).model_dump(),
+            params=ContainerAttachParams(
+                stdin=stdin, stdout=stdout, 
+                stderr=stderr, stream=stream, logs=logs).model_dump(),
             headers={
                 'Connection': 'Upgrade',
                 'Upgrade': 'tcp'
@@ -106,7 +108,18 @@ class Container(ContainerInspectResponse):
 
     async def attach(self, stdout: bool = True, stderr: bool = True,
                stream: bool = False, logs: bool = False, demux: bool = False):
-        raise NotImplementedError
+
+        try:
+            rstream, sock = await self.attach_socket(
+                stdout=stdout, stderr=stderr,
+                stream=stream, logs=logs
+            )
+
+            return b''.join(
+                [frame[1] async for frame in await frames_iter(sock, self.config.tty)]
+            )
+        finally:
+            await rstream.aclose()
 
     async def commit(self):
         raise NotImplementedError
@@ -314,9 +327,16 @@ class Containers(BaseModel):
         )
 
         container = ContainerCreateResponse.model_validate(r.json())
-        return await self.get(container.id[:12])
+        return await self.get(container)
 
-    async def get(self, container_id: str) -> Container:
+    async def get(self, container: str | ContainerSummary | ContainerCreateResponse) -> Container:
+        if isinstance(container, str):
+            container_id = container
+        elif isinstance(container, ContainerSummary) or isinstance(container, ContainerCreateResponse):
+            container_id = container.id[:12]
+        else:
+            raise NotImplementedError
+
         r = await self.transport.client.get(f"/containers/{container_id}/json")
         container = Container.model_validate(r.json())
         container.transport =  self.transport

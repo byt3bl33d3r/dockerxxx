@@ -1,8 +1,8 @@
 import typer
 import asyncio
+import structlog
 from pprint import pprint
 from .client import AsyncDockerClient
-
 
 async def amain():
     docker = AsyncDockerClient.from_env()
@@ -12,11 +12,11 @@ async def amain():
     try:
         container = await docker.containers.create('alpine', 'cat', open_stdin=True)
 
-        stream, net_stream = await container.attach_socket(stdin=True)
+        stream, sock = await container.attach_socket(stdin=True)
         await container.start()
 
-        await net_stream.write(b'sent data')
-        await net_stream.aclose()
+        await sock.write(b'sent data')
+        await sock.aclose()
         await stream.aclose()
 
         status = await container.wait()
@@ -39,8 +39,8 @@ async def amain():
     #pprint(await c[0].logs())
     #pprint(await docker.containers.run('alpine', '', remove=True))
 
-
 def main():
+    structlog.reset_defaults()
     asyncio.run(amain())
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ class ImageListParams(BaseModel):
     def convert_filters(cls, f):
         return convert_filters(f)
 
-class Image(ImageSummary):
+class Image(ImageInspect):
     """
     https://docker-py.readthedocs.io/en/stable/images.html#image-objects
     """
@@ -67,9 +67,16 @@ class Images(BaseModel):
     async def build(self, **kwargs):
         raise NotImplementedError
 
-    async def get(self, image_id: str):
+    async def get(self, image: str | ImageSummary):
+        if isinstance(image, str):
+            image_id = image
+        elif isinstance(image, ImageSummary):
+            image_id = image.id[:12]
+        else:
+            raise NotImplementedError
+
         r = await self.transport.client.get(f"/images/{image_id}/json")
-        return ImageInspect.model_validate(r.json())
+        return Image.model_validate(r.json())
 
     async def get_registry_data(self, **kwargs):
         raise NotImplementedError
@@ -101,7 +108,7 @@ class Images(BaseModel):
 
     async def pull(self, repository: str, tag: str = None, stream: bool = False, auth_config: bool = None,
              decode: bool = False, platform: str = None, all_tags: bool = False):
-        
+
         repository, image_tag = parse_repository_tag(repository)
         tag = tag or image_tag or 'latest'
 

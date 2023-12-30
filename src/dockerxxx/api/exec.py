@@ -1,6 +1,5 @@
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, field_validator
-import struct
 from ..utils import split_command
 from ..transports import BaseTransport
 from ..utils import get_raw_response_socket, frames_iter
