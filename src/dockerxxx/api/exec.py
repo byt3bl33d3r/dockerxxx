@@ -6,7 +6,7 @@ from ..utils import get_raw_response_socket, frames_iter
 
 class ExecResults(BaseModel):
     exit_code: int
-    output: str
+    output: bytes
 
 class ExecCreateConfig(BaseModel):
     Container: str = Field(alias='container')

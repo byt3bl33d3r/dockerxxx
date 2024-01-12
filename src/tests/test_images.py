@@ -53,3 +53,22 @@ class TestImage:
         )
         image = await docker.images.pull(image_ref)
         assert image_ref in image.repo_digests
+
+    async def test_tag_and_remove(self, docker: AsyncDocker):
+        repo = 'dockersdk.tests.images.test_tag'
+        tag = 'some-tag'
+        identifier = f'{repo}:{tag}'
+
+        image: Image = await docker.images.pull('alpine:latest')
+
+        result = await image.tag(repo, tag)
+        assert result is True
+        #self.tmp_imgs.append(identifier)
+        assert image.id in get_ids(await docker.images.list(repo))
+        assert image.id in get_ids(await docker.images.list(identifier))
+
+        await docker.images.remove(identifier)
+        assert image.id not in get_ids(await docker.images.list(repo))
+        assert image.id not in get_ids(await docker.images.list(identifier))
+
+        assert image.id in get_ids(await docker.images.list('alpine:latest'))

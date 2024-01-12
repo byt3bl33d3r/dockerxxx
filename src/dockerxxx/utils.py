@@ -3,6 +3,7 @@ import struct
 import httpx
 import json
 import warnings
+from .errors import DockerException
 
 try:
     from ptpython import embed
@@ -12,6 +13,12 @@ except ImportError:
 STDOUT = 1
 STDERR = 2
 STREAM_HEADER_SIZE_BYTES = 8
+BYTE_UNITS = {
+    'b': 1,
+    'k': 1024,
+    'm': 1024 * 1024,
+    'g': 1024 * 1024 * 1024
+}
 
 async def debug_shell():
     await embed(locals=locals(), globals=globals(), return_asyncio_coroutine=True, patch_stdout=True)
@@ -48,6 +55,49 @@ def convert_filters(f):
             ]
 
         return json.dumps(result)
+
+def parse_bytes(s):
+    """
+    https://github.com/docker/docker-py/blob/6ceb08273c157cbab7b5c77bd71e7389f1a6acc5/docker/utils/utils.py#L402
+    """
+
+    if isinstance(s, (int, float,)):
+        return s
+    if len(s) == 0:
+        return 0
+
+    if s[-2:-1].isalpha() and s[-1].isalpha():
+        if s[-1] == "b" or s[-1] == "B":
+            s = s[:-1]
+    units = BYTE_UNITS
+    suffix = s[-1].lower()
+
+    # Check if the variable is a string representation of an int
+    # without a units part. Assuming that the units are bytes.
+    if suffix.isdigit():
+        digits_part = s
+        suffix = 'b'
+    else:
+        digits_part = s[:-1]
+
+    if suffix in units.keys() or suffix.isdigit():
+        try:
+            digits = float(digits_part)
+        except ValueError as ve:
+            raise DockerException(
+                'Failed converting the string value for memory '
+                f'({digits_part}) to an integer.'
+            ) from ve
+
+        # Reconvert to long for the final result
+        s = int(digits * units[suffix])
+    else:
+        raise DockerException(
+            f'The specified value for memory ({s}) should specify the units. '
+            'The postfix should be one of the `b` `k` `m` `g` characters'
+        )
+
+    return s
 
 '''
 https://github.com/docker/docker-py/blob/6ceb08273c157cbab7b5c77bd71e7389f1a6acc5/docker/utils/socket.py#L92

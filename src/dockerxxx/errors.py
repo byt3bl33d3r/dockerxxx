@@ -26,3 +26,6 @@ class ContainerError(DockerException):
             f"Command '{command}' in image '{image}' "
             f"returned non-zero exit status {exit_status}{err}"
         )
+
+class ImageNotFound(DockerException):
+    pass

@@ -8,11 +8,14 @@ from ..models import (
     ContainerSummary, ContainerConfig, 
     ContainerCreateResponse, ContainerWaitResponse, 
     ContainerState, GraphDriverData, HostConfig,
-    NetworkSettings, MountPoint
+    NetworkSettings, MountPoint, RestartPolicy
 )
 from ..transports import BaseTransport
 from ..errors import ContainerError
-from ..utils import split_command, convert_filters, get_raw_response_socket, get_results, frames_iter
+from ..utils import (
+    split_command, convert_filters, get_raw_response_socket, 
+    get_results, frames_iter, parse_bytes
+)
 from pydantic import field_validator
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -24,6 +27,26 @@ class ContainerLogParams(BaseModel):
     tail: Optional[int | str] = 'all'
     since: Optional[datetime] = None
     until: Optional[datetime] = None
+
+class ContainerUpdateResponse(BaseModel):
+    warnings: List[str] = Field(alias="Warnings")
+
+class ContainerUpdateConfig(BaseModel):
+    blkio_weight: Optional[int] = Field(None, alias='BlkioWeight')
+    cpu_period: Optional[int] = Field(None, alias='CpuPeriod')
+    cpu_quota: Optional[int] = Field(None, alias='CpuQuota')
+    cpu_shares: Optional[int] = Field(None, alias='CpuShares')
+    cpuset_cpus: Optional[str] = Field(None, alias='CpusetCpus')
+    cpuset_mems: Optional[str] = Field(None, alias='CpusetMems')
+    mem_limit: Optional[float | str] = Field(None, alias='Memory')
+    mem_reservation: Optional[float | str] = Field(None, alias='MemoryReservation')
+    memswap_limit: Optional[int | str] = Field(None, alias='MemorySwap')
+    kernel_memory: Optional[int | str] = Field(None, alias='KernelMemory')
+    restart_policy: Optional[RestartPolicy] = Field(None, alias='RestartPolicy')
+
+    @field_validator("mem_limit", "mem_reservation", "memswap_limit", "kernel_memory")
+    def convert(cls, v):
+        return parse_bytes(v)
 
 class ContainerListParams(BaseModel):
     filters: Optional[Dict[Any, Any] | str] = None
@@ -78,13 +101,17 @@ class Container(ContainerInspectResponse):
 
     transport: Optional[BaseTransport] = Field(None)
 
+    @property
+    def status(self) -> str:
+        return self.state.status.value
+
     @field_validator('id')
     def shorten_id(cls, v):
         return v[:12]
 
-    #@field_validator('names')
-    #def shorten_names(cls, v):
-    #    return [ name.strip('/') for name in v ]
+    @field_validator('name')
+    def fix_name(cls, v):
+        return v.strip('/')
 
     @field_validator('image')
     def shorten_image_id(cls, v):
@@ -169,6 +196,23 @@ class Container(ContainerInspectResponse):
     async def get_archive(self):
         raise NotImplementedError
 
+    async def update(self, blkio_weight: int = None, cpu_period: int = None, cpu_quota: int = None,
+        cpu_shares: int = None, cpuset_cpus: str = None, cpuset_mems: str = None, mem_limit: float | str = None,
+        mem_reservation: float | str = None, memswap_limit: int | str = None, kernel_memory: int | str =None,
+        restart_policy: RestartPolicy = None):
+
+        r = await self.transport.client.post(
+            f"/containers/{self.id}/update",
+            json=ContainerUpdateConfig(
+                blkio_weight=blkio_weight, cpu_period=cpu_period, cpu_quota=cpu_quota,
+                cpu_shares=cpu_shares, cpuset_cpus=cpuset_cpus, cpuset_mems=cpuset_mems, 
+                mem_limit=mem_limit, mem_reservation=mem_reservation, memswap_limit=memswap_limit, 
+                kernel_memory=kernel_memory, restart_policy=restart_policy
+            ).model_dump(by_alias=True)
+        )
+
+        return ContainerUpdateResponse.model_validate(r.json())
+
     async def start(self):
         await self.transport.client.post(f"/containers/{self.id}/start")
 
@@ -190,7 +234,20 @@ class Container(ContainerInspectResponse):
         )
 
     async def restart(self):
-        await self.transport.client.post(f"/containers/{self.id}/restart")
+        await self.transport.client.post(
+            f"/containers/{self.id}/restart",
+            timeout=None
+        )
+
+    async def pause(self):
+        await self.transport.client.post(
+            f"/containers/{self.id}/pause"
+        )
+
+    async def unpause(self):
+        await self.transport.client.post(
+            f"/containers/{self.id}/unpause"
+        )
 
     async def kill(self, signal: str | int = 'SIGKILL'):
         await self.transport.client.post(
@@ -330,7 +387,9 @@ class Containers(BaseModel):
             if remove: await container.remove()
 
     async def create(self, image: str | Image, command: str = None, **kwargs) -> Container:
-        # https://github.com/docker/docker-py/blob/6ceb08273c157cbab7b5c77bd71e7389f1a6acc5/docker/types/containers.py#L680
+        """
+        https://github.com/docker/docker-py/blob/6ceb08273c157cbab7b5c77bd71e7389f1a6acc5/docker/types/containers.py#L680
+        """
 
         if isinstance(image, Image):
             image = image.id
@@ -360,6 +419,10 @@ class Containers(BaseModel):
 
         r = await self.transport.client.post(
             "/containers/create",
+            params={
+                'name': kwargs.get('name'),
+                'platform': kwargs.get('platform')
+            },
             json=ContainerConfig.model_validate(kwargs).model_dump(by_alias=True)
         )
 

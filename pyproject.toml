@@ -29,8 +29,9 @@ datamodel-code-generator = "^0.25.1"
 rich = "^13.7.0"
 pytest = "^7.4.3"
 
-[tool.coverage.paths]
-source = ["src", "*/site-packages"]
+[tool.pytest.ini_options]
+addopts = "--cov=dockerxxx"
+filterwarnings = []
 
 [tool.coverage.run]
 branch = true
@@ -38,6 +39,9 @@ source = ["dockerxxx"]
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.coverage.paths]
+source = ["src", "*/site-packages"]
 
 [build-system]
 requires = ["poetry-core"]

@@ -10,6 +10,7 @@ from pydantic_core.core_schema import ValidationInfo
 
 class ImageListParams(BaseModel):
     all: Optional[bool] = False
+    only_ids: Optional[bool] = False
     filters: Optional[Dict[Any, Any] | str] = None
     shared_size: Optional[bool] = Field(False, alias='shared-size')
     digests: Optional[bool] = False
@@ -50,8 +51,17 @@ class Image(ImageInspect):
     async def save(self, **kwargs):
         raise NotImplementedError
 
-    async def tag(self, **kwargs):
-        raise NotImplementedError
+    async def tag(self, name: str, repo: str = None, tag: str = None, force: bool = False):
+        r = await self.transport.client.post(
+            f"/images/{self.id}/tag",
+            params={
+                "repo": repo,
+                "tag": tag,
+                "force": int(force)
+            }
+        )
+
+        return r.status_code == 201
 
     async def remove(self, force: bool = False, noprune: bool = False):
         await self.transport.client.delete(
@@ -110,13 +120,26 @@ class Images(BaseModel):
     async def get_registry_data(self, **kwargs):
         raise NotImplementedError
 
-    async def list(self, all: bool = False, filters: Dict[Any, Any] = None,
-                   shared_size: bool = False, digests: bool = False) -> List[Image]:
+    async def list(self, name: str = None, all: bool = False, filters: Dict[Any, Any] = None,
+                   shared_size: bool = False, digests: bool = False, quiet: bool = False) -> List[Image]:
+        """
+        https://github.com/docker/docker-py/blob/6ceb08273c157cbab7b5c77bd71e7389f1a6acc5/docker/api/image.py#L59C33-L59C38
+        """
+
+        if name:
+            if filters:
+                filters['reference'] = name
+            else:
+                filters = {'reference': name}
+
         r = await self.transport.client.get(
             "/images/json",
-            params=ImageListParams(all=all, filters=filters,
-                                   shared_size=shared_size, digests=digests).model_dump()
+            params=ImageListParams(
+                all=all, filters=filters, only_ids=quiet,
+                shared_size=shared_size, digests=digests
+            ).model_dump()
         )
+
         images = Response[ImageSummary](data=r.json()).data
         return await asyncio.gather(*[
             self.get(image.id) for image in images
