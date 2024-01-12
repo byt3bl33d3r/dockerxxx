@@ -1,1 +1,11 @@
-__version__ = "0.1.0"
+import importlib.metadata
+
+__version__ = importlib.metadata.version("dockerxxx")
+
+from .client import Docker
+from .client import AsyncDocker
+
+__all__ = [
+    "Docker",
+    "AsyncDocker"
+]

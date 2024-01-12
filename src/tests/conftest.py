@@ -1,6 +1,6 @@
 import pytest_asyncio
-from dockerxxx.client import AsyncDockerClient
+from dockerxxx import AsyncDocker
 
 @pytest_asyncio.fixture(scope="session")
 async def docker():
-    return AsyncDockerClient.from_env()
+    return await AsyncDocker.from_env()

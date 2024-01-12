@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from .images import Image
@@ -13,7 +14,7 @@ from ..transports import BaseTransport
 from ..errors import ContainerError
 from ..utils import split_command, convert_filters, get_raw_response_socket, get_results, frames_iter
 from pydantic import field_validator
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class ContainerLogParams(BaseModel):
     stderr: bool
@@ -73,8 +74,9 @@ class ContainerInspectResponse(BaseModel):
     network_settings: Optional[NetworkSettings] = Field(None, alias='NetworkSettings')
 
 class Container(ContainerInspectResponse):
+    model_config = ConfigDict(validate_assignment=True)
+
     transport: Optional[BaseTransport] = Field(None)
-    #model_config = ConfigDict(extra='allow')
 
     @field_validator('id')
     def shorten_id(cls, v):
@@ -170,14 +172,25 @@ class Container(ContainerInspectResponse):
     async def start(self):
         await self.transport.client.post(f"/containers/{self.id}/start")
 
-    async def stop(self):
-        await self.transport.client.post(f"/containers/{self.id}/stop")
+    async def stop(self, signal: str = None, timeout: int = None):
+        await self.transport.client.post(
+            f"/containers/{self.id}/stop",
+            params={'signal': signal, 't': timeout }
+        )
 
     async def remove(self, v: bool = False, link: bool = False, force: bool = False):
         await self.transport.client.delete(
             f"/containers/{self.id}",
             params={'force': force, 'link': link, 'v': v}
         )
+    async def rename(self, name: str):
+        await self.transport.client.post(
+            f"/containers/{self.id}/rename",
+            params={'name': name}
+        )
+
+    async def restart(self):
+        await self.transport.client.post(f"/containers/{self.id}/restart")
 
     async def kill(self, signal: str | int = 'SIGKILL'):
         await self.transport.client.post(
@@ -191,9 +204,12 @@ class Container(ContainerInspectResponse):
             f"/containers/{self.id}/logs",
             params=container_log_params.model_dump()
         ) as r:
-            # if self.config.tty:
+            #raw_sock = get_raw_response_socket(self.transport.client)
+            #async for frame in await frames_iter(raw_sock, self.config.tty):
+            #    _, result = frame
+            #    yield result
             async for chunk in r.aiter_bytes():
-                yield chunk
+                yield await get_results(chunk, self.config.tty)
 
     async def logs(self, stdout: bool = True, stderr: bool = True, stream: bool = False,
              timestamps: bool = False, tail: str | int = 'all', since: str = None, follow: bool = False,
@@ -230,6 +246,27 @@ class Container(ContainerInspectResponse):
         )
 
         return ContainerWaitResponse.model_validate(r.json())
+
+    async def reload(self):
+        r = await self.transport.client.get(f"/containers/{self.id}/json")
+        inspect = ContainerInspectResponse.model_validate(r.json())
+        for k in inspect.model_fields:
+            setattr(self, k, getattr(inspect, k))
+
+    async def stats(self, stream: bool = False, one_shot: bool = None):
+        stats = await self.transport.client.get(
+            f"/containers/{self.id}/stats",
+            params={'stream': stream, 'one-shot': one_shot}
+        )
+        return stats.json()
+
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return (self.id == other) or (self.id == other[:12])
+        elif isinstance(other, Container) or isinstance(other, ContainerInspectResponse):
+            return other.id == self.id
+
+        raise NotImplementedError
 
 class Containers(BaseModel):
     transport: BaseTransport
@@ -332,6 +369,8 @@ class Containers(BaseModel):
     async def get(self, container: str | ContainerSummary | ContainerCreateResponse) -> Container:
         if isinstance(container, str):
             container_id = container
+        elif isinstance(container, Container):
+            container_id = container.id
         elif isinstance(container, ContainerSummary) or isinstance(container, ContainerCreateResponse):
             container_id = container.id[:12]
         else:
@@ -344,15 +383,20 @@ class Containers(BaseModel):
 
     async def list(self, all: bool = False, before: str = None,
                    filters: Dict[Any, Any] = None, limit: int = -1, since: str = None,
-                   sparse: bool = False, ignore_removed: bool = False) -> List[ContainerSummary]:
+                   sparse: bool = False, ignore_removed: bool = False) -> List[Container]:
 
         r = await self.transport.client.get(
             "/containers/json", 
-            params=ContainerListParams(all=all, before=before, filters=filters, limit=limit, since=since).model_dump()
+            params=ContainerListParams(
+                all=all, before=before, 
+                filters=filters, limit=limit, since=since
+            ).model_dump()
         )
 
         containers = Response[ContainerSummary](data=r.json()).data
-        return containers
+        return await asyncio.gather(*[
+            self.get(container.id) for container in containers
+        ])
 
     async def prune(self):
         raise NotImplementedError

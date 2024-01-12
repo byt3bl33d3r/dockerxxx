@@ -1,4 +1,5 @@
 import asyncio
+import structlog
 from .transports import (
     BaseTransport,
     UnixSocketTransport,
@@ -18,41 +19,14 @@ from pydantic.types import Path
 from pydantic_core.core_schema import ValidationInfo
 from pydantic_settings import BaseSettings
 
+log = structlog.get_logger()
+
 
 class EnvSettings(BaseSettings):
     docker_host: AnyUrl = "unix:///var/run/docker.sock"
     docker_tls_verify: bool = True
     docker_cert_path: Optional[Path] = None
-
-
-class BaseDockerClient(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    base_url : AnyUrl = "unix:///var/run/docker.sock"
-    version: str = "auto"
-    timeout: int = 5
-    tls: bool = True
-    user_agent: Optional[str] = None
-    transport: Optional[BaseTransport] = Field(None, validate_default=True)
-
-    @classmethod
-    def from_env(cls, version: str = "auto", timeout: int = 5, user_agent: str = None):
-        settings = EnvSettings()
-        return cls(
-            base_url=settings.docker_host,
-            version=version,
-            timeout=timeout,
-            tls=settings.docker_tls_verify,
-            user_agent=user_agent
-        )
-
-    @property
-    def images(self):
-        return Images(transport=self.transport)
-
-    @property
-    def containers(self):
-        return Containers(transport=self.transport)
+ 
 
 class EventStreamParams(BaseModel):
     since: Optional[str] = None
@@ -63,7 +37,43 @@ class EventStreamParams(BaseModel):
     def convert_filters(cls, f):
         return convert_filters(f)
 
-class AsyncDockerClient(BaseDockerClient):
+
+class BaseDockerClient(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    base_url : AnyUrl = "unix:///var/run/docker.sock"
+    version: Optional[float] = None
+    timeout: int = 5
+    tls: bool = True
+    user_agent: Optional[str] = None
+    cert_path: Optional[Path] = None
+    transport: Optional[BaseTransport] = Field(None, validate_default=True)
+
+    @classmethod
+    async def from_env(cls, version: str = "auto", timeout: int = 5):
+        settings = EnvSettings()
+        client = cls(
+            base_url=settings.docker_host,
+            timeout=timeout,
+            tls=settings.docker_tls_verify,
+            cert_path=settings.docker_cert_path
+        )
+
+        if version == "auto":
+            client.version = (await client.daemon_version()).api_version
+            log.debug("retrieved api version", api_version=client.version)
+
+        return client
+
+    @property
+    def images(self):
+        return Images(transport=self.transport)
+
+    @property
+    def containers(self):
+        return Containers(transport=self.transport)
+
+class AsyncDocker(BaseDockerClient):
     '''
     https://github.com/docker/docker-py/blob/6ceb08273c157cbab7b5c77bd71e7389f1a6acc5/docker/api/client.py
     '''
@@ -109,18 +119,18 @@ class AsyncDockerClient(BaseDockerClient):
                 #yield SystemEventResponse.model_validate(r.json())
                 yield event
 
-    async def ping(self):
+    async def ping(self) -> str:
         return (await self.transport.client.get("/_ping")).text
 
-    async def info(self):
+    async def info(self) -> SystemInfo:
         r = await self.transport.client.get("/info")
         return SystemInfo.model_validate(r.json())
 
-    async def daemon_version(self):
+    async def daemon_version(self) -> SystemVersion:
         r = await self.transport.client.get("/version")
         return SystemVersion.model_validate(r.json())
 
-class DockerClient(BaseDockerClient):
+class Docker(BaseDockerClient):
     @field_validator('transport')
     def set_transport(cls, v, info: ValidationInfo) -> UnixSocketTransport | HttpTransport | SshTransport:
         if info.data['base_url'].scheme == 'unix':

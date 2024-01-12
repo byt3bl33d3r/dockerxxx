@@ -1,8 +1,8 @@
 import asyncio
-from dockerxxx.client import AsyncDockerClient
+from dockerxxx import AsyncDocker
 
 async def amain():
-    docker = AsyncDockerClient.from_env()
+    docker = await AsyncDocker.from_env()
     await docker.containers.run("ubuntu", "echo hello world")
     await docker.containers.run("bfirsh/reticulate-splines", detach=True)
 

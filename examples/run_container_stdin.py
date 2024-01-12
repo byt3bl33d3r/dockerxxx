@@ -1,8 +1,8 @@
 import asyncio
-from dockerxxx.client import AsyncDockerClient
+from dockerxxx import AsyncDocker
 
 async def amain():
-    docker = AsyncDockerClient.from_env()
+    docker = await AsyncDocker.from_env()
 
     try:
         container = await docker.containers.create('alpine', 'cat', open_stdin=True)
