@@ -72,7 +72,7 @@ class Image(ImageInspect):
     def __eq__(self, other):
         if isinstance(other, str):
             return (self.id == other) or (self.id == other[:12])
-        elif isinstance(other, Image) or isinstance(other, ImageInspect):
+        elif isinstance(other, (Image, ImageInspect)):
             return other.id == self.id
 
         raise NotImplementedError

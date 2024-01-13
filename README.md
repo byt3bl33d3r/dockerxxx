@@ -30,16 +30,23 @@ For now install directly from Git:
 
 ## What works and how well?
 
-I'm striving for 1 to 1 feature parity with the official library. As of writing this is beta software, take a look at the tests and the examples folder for to get a clear idea of what works.
+I'm striving for 1 to 1 feature parity with the official library (with the exception of Swarm-related functionality). As of writing this is beta software, take a look at the tests and the examples folder for to get a clear idea of what works.
+
+> [!NOTE]
+> The existence of tests doesn't imply that they're all currently passing
 
 | API | Implemented | Tests  |
 | --- | --- | -- |
-| Images | 80% | ✅ | 
-| Containers | 80% | ✅ | 
+| Containers | 80% | ✅ |
 | Exec | 90% | ✅ |
+| Images | 80% | ✅ | 
+| Networks | 100% | ✅ |
+| Nodes | 0% (Not Planned) | N/A |
+| Plugins | 0% | ❌ |
+| Secrets | 0% | ❌ |
+| Services | 0% (Not Planned) | N/A |
 | Swarm | 0% (Not Planned) | N/A |
-| Networks | 0% | ❌ |
-| Volumes | 0% | ❌ |
+| Volumes | 100% | ✅ |
 
 ## Usage
 

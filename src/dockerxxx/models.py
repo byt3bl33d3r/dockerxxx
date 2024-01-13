@@ -4499,6 +4499,8 @@ class NetworkSettings(BaseModel):
 
 
 class VolumeCreateOptions(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     """
     Volume configuration
     """

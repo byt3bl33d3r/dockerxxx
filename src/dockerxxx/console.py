@@ -11,8 +11,9 @@ async def amain():
     pprint(await docker.ping())
     #pprint(await docker.containers.list())
     #pprint(await docker.images.pull('nginx'))
-
-    pprint(await docker.images.list())
+    #network = await docker.networks.create('wassup', labels={'foo': 'bar'})
+    #pprint(await docker.images.list())
+    #pprint(network)
     #pprint(await docker.containers.get("0201f1f3626e"))
     #c = await docker.containers.list()
     #pprint(c)

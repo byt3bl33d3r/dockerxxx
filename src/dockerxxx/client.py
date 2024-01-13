@@ -9,7 +9,7 @@ from .transports import (
     AsyncHttpTransport,
     AsyncSshTransport
 )
-from .api import Images, Containers
+from .api import Images, Containers, Networks, Volumes
 from .models import SystemInfo, SystemVersion
 from .utils import convert_filters
 from .errors import DockerException
@@ -72,6 +72,14 @@ class BaseDockerClient(BaseModel):
     @property
     def containers(self):
         return Containers(transport=self.transport)
+
+    @property
+    def networks(self):
+        return Networks(transport=self.transport)
+
+    @property
+    def volumes(self):
+        return Volumes(transport=self.transport)
 
 class AsyncDocker(BaseDockerClient):
     '''

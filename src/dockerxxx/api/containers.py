@@ -320,7 +320,7 @@ class Container(ContainerInspectResponse):
     def __eq__(self, other):
         if isinstance(other, str):
             return (self.id == other) or (self.id == other[:12])
-        elif isinstance(other, Container) or isinstance(other, ContainerInspectResponse):
+        elif isinstance(other, (Container, ContainerInspectResponse)):
             return other.id == self.id
 
         raise NotImplementedError
@@ -434,7 +434,7 @@ class Containers(BaseModel):
             container_id = container
         elif isinstance(container, Container):
             container_id = container.id
-        elif isinstance(container, ContainerSummary) or isinstance(container, ContainerCreateResponse):
+        elif isinstance(container, (ContainerSummary, ContainerCreateResponse)):
             container_id = container.id[:12]
         else:
             raise NotImplementedError
