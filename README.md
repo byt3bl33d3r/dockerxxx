@@ -30,7 +30,7 @@ For now install directly from Git:
 
 ## What works and how well?
 
-I'm striving for 1 to 1 feature parity with the official library. as of This is beta software, take a look at the tests and the examples folder for to get a good idea of what works.
+I'm striving for 1 to 1 feature parity with the official library. As of writing this is beta software, take a look at the tests and the examples folder for to get a clear idea of what works.
 
 | API | Implemented | Tests  |
 | --- | --- | -- |
@@ -110,11 +110,3 @@ The official [Docker SDK for Python](https://github.com/docker/docker-py) is lac
 ### ... What's with the name and can you change it ffs?
 
 `dockerx` (my first choice) is already taken on PyPI, `dockerxx` seemed dumb and doesn't make any sense, `dockerxxx` is spicy 🌶️. I might change the name once feature parity is achieved with the official library cause I know people/corps hate "non-professional" names blah blah blah, It'll hinder adoption blah blah blah but for now let a guy inject some humor into his life will ya?
-
-## Developer Notes
-
-```
-datamodel-codegen --input docker-v1.43.yaml --input-file-type openapi --output src/dockerxxx/models.py --target-python-version 3.10 --use-schema-description --snake-case-field --collapse-root-models
-```
-
-To convert from swagger 2.0 to OpenAPI 3.0 https://stackoverflow.com/a/59749691
