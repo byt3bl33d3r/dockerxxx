@@ -13,7 +13,7 @@ async def amain():
     print(await container.logs())
     await container.stop()
 
-    async for line in container.logs(stream=True):
+    async for line in await container.logs(stream=True):
         print(line.strip())
     
     await docker.images.pull('nginx')

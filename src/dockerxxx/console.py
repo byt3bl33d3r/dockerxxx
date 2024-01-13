@@ -8,7 +8,7 @@ async def amain():
     docker = await AsyncDocker.from_env()
     #pprint(await docker.daemon_version())
     #pprint(await docker.info())
-    #await docker.ping()
+    pprint(await docker.ping())
     #pprint(await docker.containers.list())
     #pprint(await docker.images.pull('nginx'))
 
